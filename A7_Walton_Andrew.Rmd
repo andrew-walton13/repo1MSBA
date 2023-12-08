@@ -1,0 +1,302 @@
+---
+title: "A7_Walton_Andrew.Rmd"
+author: "Andrew Walton"
+date: "2023-07-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Project Assignment
+
+Objectives: Use the skills you have learned in this class to analyze and model a new dataset. 
+
+
+```{r}
+
+# Load libraries
+
+library(scatterplot3d)
+library(tidyverse)
+library(arules)
+library(RWeka)
+library(psych)
+library(C50)
+library(knitr)
+library(RWeka)
+library(rpart)
+library(rpart.plot)
+library(rminer) 
+library(e1071)
+library(C50)
+library(caret)
+library(rmarkdown)
+library(kernlab)
+library(rpart)
+library(rpart.plot)
+library(rJava)
+```
+
+# Task I - EDA (25%)
+Perform exploratory data analysis on the dataset. Add text to note items from code blocks you have observed. 
+
+
+```{r}
+
+# Set working directory and import data
+setwd("C:/Users/andre/OneDrive/Documents/MSBA")
+census_raw <- read.csv("census.csv")
+
+```
+
+
+```{r}
+
+# Check data set structure
+str(census_raw)
+
+```
+> We have a lot of "chr" to convert to factors to allow us to get a better summary of the data
+
+
+```{r}
+
+# Transform strings to factors
+census_raw$workclass <- as.factor(census_raw$workclass)
+census_raw$education <- as.factor(census_raw$education)
+census_raw$marital.status <- as.factor(census_raw$marital.status)
+census_raw$occupation <- as.factor(census_raw$occupation)
+census_raw$relationship <- as.factor(census_raw$relationship)
+census_raw$race <- as.factor(census_raw$race)
+census_raw$sex <- as.factor(census_raw$sex)
+census_raw$native.country <- as.factor(census_raw$native.country)
+census_raw$y <- as.factor(census_raw$y)
+
+# Summarize the data post conversions
+summary(census_raw)
+```
+> Some things that initially jump out to me is that there are 42 native countries represented, but a large majority is United States. 
+
+> Our target variable is now a factor that is split in two levels, which are <=50k and >50k. There are a lot more in the <=50k than the >50k
+
+> There is a heavy majority of white for race
+
+> There are roughly twice as many males as females
+
+```{r}
+
+
+census_raw %>%
+  group_by(y, relationship) %>%
+  summarize(n = n(),
+    hours.per.week = mean(hours.per.week),
+    age = mean(age)
+  )
+
+```
+
+
+> The over 50k group has much higher averages for hours per week and other than "own-child" they have a higher age on average
+
+# Task II - Data Preparation (15%):
+
+Prepare your data for modeling
+
+
+```{r}
+
+set.seed(500)
+censusTrain <- createDataPartition(y=census_raw$y, p = 0.70, list=FALSE)
+
+census_train_target <- census_raw[censusTrain,8]
+census_test_target <- census_raw[-censusTrain,8]
+census_train_input <- census_raw[censusTrain,-8]
+census_test_input <- census_raw[-censusTrain,-8]
+
+census_train <- census_raw[censusTrain,]
+census_test <- census_raw[-censusTrain,]
+
+table(census_train$y)
+table(census_test$y)
+
+# Distributions
+
+prop.table(table(census_train$y))
+prop.table(table(census_test$y))
+
+```
+
+# Task III - Model Building (30%)
+
+Build a variety of models and keep them to show your efforts to achieve good performance.
+Your stakeholders prefer interpretability over performance. Consider this as you choose your models.
+How many models are sufficient? Enough to show that you found underfitting, overfitting and a good balance between the two. Your stakeholders still want a good model however.
+
+
+```{r}
+
+# Build a C5.0 model
+
+census_m1_c50 <- C5.0(y~., census_train)
+
+str(census_m1_c50)
+summary(census_m1_c50)
+
+```
+
+```{r}
+
+predicted_y_test_census <- predict(census_m1_c50, census_test)
+
+# mmetric() functions
+
+mmetric(census_test$y, predicted_y_test_census, metric="CONF")
+
+mmetric(census_test$y, predicted_y_test_census, metric=c("ACC","TPR","PRECISION","F1"))
+
+# For comparison, apply the model to the train set and generate evaluation metrics. 
+
+predicted_y_train_census <- predict(census_m1_c50, census_train)
+
+mmetric(census_train$y, predicted_y_train_census, metric="CONF")
+
+mmetric(census_train$y, predicted_y_train_census, metric=c("ACC","TPR","PRECISION","F1"))
+
+
+```
+
+> the mmetrics (accuracy, precision, etc.) are a little bit better for the train set than the test set. This indicates overfitting in the model as it was not able to do as well with the test set. This doesn't seem like a very helpful model
+
+```{r}
+
+# Naive Bayes model
+
+census_m2_nb <- naiveBayes(y~., census_train)
+
+str(census_m2_nb)
+
+summary(census_m2_nb)
+
+```
+
+```{r}
+
+predicted_y_test_nb <- predict(census_m2_nb, census_test)
+
+mmetric(census_test$y, predicted_y_test_nb, metric="CONF")
+
+mmetric(census_test$y, predicted_y_test_nb, metric=c("ACC","TPR","PRECISION","F1"))
+
+# For comparison, apply the model to the train set and generate evaluation metrics. 
+# Check out the performance drop in the holdout set.
+
+predicted_y_train_nb <- predict(census_m2_nb, census_train)
+
+mmetric(census_train$y, predicted_y_train_nb, metric="CONF")
+
+mmetric(census_train$y, predicted_y_train_nb, metric=c("ACC","TPR","PRECISION","F1"))
+
+
+```
+
+> This model seems to be a little better than the previous one as here we have a slight increase in most of the mmetrics from the training set to the test set. Out of the two so far, this seems to be the better model, though it is just a slight increase in accuracy and the precision is actually a little bit lower in the test set.
+
+
+```{r}
+
+df <- census_raw
+target <- 15
+nFolds <- 3
+seedVal <- 500
+assign("classification", naiveBayes) 
+metrics_list <- c("ACC","PRECISION","TPR","F1")
+
+cv_function <- function(df, target, nFolds, seedVal, classification, metrics_list)
+{
+  set.seed(seedVal)
+  folds = createFolds(df[,target],nFolds) 
+  
+  cv_results <- lapply(folds, function(x)
+  { 
+    train <- df[-x,-target]
+    test  <- df[x,-target]
+    
+    train_target <- df[-x,target]
+    test_target <- df[x,target]
+    
+    classification_model <- classification(train,train_target) 
+    
+    pred<- predict(classification_model,test)
+    
+    return(mmetric(test_target,pred,c("ACC","PRECISION","TPR","F1")))
+    
+  })
+  
+  cv_results
+  
+  #cv_results_m <- as.matrix(as.data.frame(cv_results))
+  
+  #cv_mean<- as.matrix(rowMeans(cv_results_m))
+  
+ # colnames(cv_mean) <- "Mean"
+  
+# cv_sd <- as.matrix(rowSds(cv_results_m))
+  
+ # colnames(cv_sd) <- "Sd"
+  
+  # cv_all <- cbind(cv_results_m, cv_mean, cv_sd)
+  
+  # kable(cv_all,digits=2)
+}
+
+# set input values to the function(x) in lapply
+# df =  the whole data set
+# target = the column index of the target variable
+# nFolds = the number of folds
+# classification = the algorithm, e.g. C5.0 or naiveBayes
+# seed_value = input for set.seed()
+
+
+
+
+cv_function(df, target, nFolds, seedVal, classification, metrics_list)
+
+
+# Different nFolds
+
+df <- census_raw
+target <- 15
+nFolds <- 5
+seedVal <- 500
+assign("classification", C5.0) 
+metrics_list <- c("ACC","PRECISION","TPR","F1")
+
+cv_function(df, target, nFolds, seedVal, classification, metrics_list)
+
+
+
+# Different nFolds
+
+nFolds <- 10
+
+cv_function(df, target, nFolds, seedVal, classification, metrics_list)
+
+
+
+
+```
+
+
+
+
+# Task IV - Reflections (30%)
+Write up your summary findings in a paragraph to conclude your analysis. 
+
+> There are a lot of different conclusions that we can take from the various models. For example, it is useful to see the attribute usage in the C5.0 model is greater than 95% for capital.gain, relationship, capital.loss, and less than 10% for workclass, fnlwgt, and marital.status. This can give us some indication of what the most important inputs are in this model. This model does appear to have some overfitting, however, as our test model did worse than the train model
+
+> With our Naive Bayes model, we were able to increase the accuracy from the train to the test model, which we were not able to do with the first model. However, the accuracy was lower on this model
+
+> Doing the 3, 5, or 10 fold validation of the C5.0 and Naive Bayes models appears to be the best model we have created yet. There is a low level of variance across the results which is good and means that the model is not too overfitted. The accuracy and precision are also pretty high which is good as well. This is the model that I would pick over the other models that have been created previously. I would personally go with the 10 fold over the 5 and 3 fold as it seems to have the best balance of high accuracy and precision while maintaining low variance.
