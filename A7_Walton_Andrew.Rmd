@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Project Assignment
 
-Objectives: Use the skills you have learned in this class to analyze and model a new dataset. 
+Objectives: Use the skills you have learned in this class to analyze the dataset and build various models
 
 
 ```{r}
